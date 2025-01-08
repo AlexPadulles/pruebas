@@ -69,120 +69,155 @@
         </div>
     </div>
 
-    <script>
-        // Asumimos que este JSON viene de PHP
-        const errorData = <?php echo json_encode($erroresDeBaseDeDatos); ?>;
+     <script>
+                    // Obtenemos el JSON de errores que viene desde PHP y lo convertimos en un objeto JavaScript
+            const errorData = <?php echo json_encode($erroresDeBaseDeDatos); ?>;
 
-        $(document).ready(function() {
-            let processedContent = '';
-            let changes = [];
+            // Cuando el documento esté listo, iniciamos nuestra funcionalidad
+            $(document).ready(function() {
+                // Variables para almacenar el contenido procesado y los cambios realizados
+                let processedContent = ''; // Almacenará el archivo final procesado
+                let changes = [];         // Almacenará todos los cambios realizados para mostrarlos después
 
-            // Función para leer el archivo PSR
-            function readPSRFile(file) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.onerror = (e) => reject(e);
-                    reader.readAsText(file);
-                });
-            }
+                // Función que lee el archivo PSR que sube el usuario
+                // Devuelve una Promise que resuelve con el contenido del archivo
+                function readPSRFile(file) {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        // Cuando termine de leer, devuelve el contenido
+                        reader.onload = (e) => resolve(e.target.result);
+                        // Si hay error, lo rechaza
+                        reader.onerror = (e) => reject(e);
+                        // Comienza a leer el archivo como texto
+                        reader.readAsText(file);
+                    });
+                }
 
-            // Función para procesar el contenido
-            function processContent(psrContent) {
-                const errorMap = new Map(errorData.map(error => [error.code, error]));
-                const xerroxRegex = /XERROX\(([^,]+),\s*'([^']+)'\)/g;
-                changes = [];
+                // Función principal que procesa el contenido del archivo PSR
+                function processContent(psrContent) {
+                    // Crear un Map para búsqueda rápida de errores por código
+                    // Map es más eficiente que buscar en array para muchas búsquedas
+                    const errorMap = new Map(errorData.map(error => [error.code, error]));
 
-                const lines = psrContent.split('\n');
-                const processedLines = lines.map((line, index) => {
-                    if (!line.includes('XERROX')) return line;
+                    var errorMaps = new Map(errorData.map( function(error){
+                        return [error.code, error];
+                    }));
+                    
+                    // Expresión regular para encontrar patrones XERROX en el texto
+                    // Busca: XERROX(código, 'descripción')
+                    const xerroxRegex = /XERROX\(([^,]+),\s*'([^']+)'\)/g;
 
-                    const processedLine = line.replace(xerroxRegex, (match, code, articleDesc) => {
-                        const trimmedCode = code.trim();
-                        const errorInfo = errorMap.get(trimmedCode);
+                    // Reiniciar el array de cambios
+                    changes = [];
 
-                        if (errorInfo) {
-                            const newLine = `XERROX(${trimmedCode}, '${articleDesc} - ${errorInfo.description}')`;
-                            changes.push({
-                                lineNumber: index + 1,
-                                original: line,
-                                processed: newLine
-                            });
-                            return newLine;
-                        }
-                        return match;
+                    // Dividir el contenido en líneas y procesar cada una
+                    const lines = psrContent.split('\n');
+                    const processedLines = lines.map((line, index) => {
+                        // Si la línea no contiene XERROX, la dejamos igual
+                        if (!line.includes('XERROX')) return line;
+
+                        // Reemplazar cada ocurrencia de XERROX en la línea
+                        const processedLine = line.replace(xerroxRegex, (match, code, articleDesc) => {
+                            const trimmedCode = code.trim();
+                            // Buscar si existe un error con ese código
+                            const errorInfo = errorMap.get(trimmedCode);
+
+                            if (errorInfo) {
+                                // Si encontramos el error, creamos la nueva línea concatenando las descripciones
+                                const newLine = `XERROX(${trimmedCode}, '${articleDesc} - ${errorInfo.description}')`;
+                                // Guardar el cambio para mostrarlo después
+                                changes.push({
+                                    lineNumber: index + 1,
+                                    original: line,
+                                    processed: newLine
+                                });
+                                return newLine;
+                            }
+                            // Si no encontramos el error, dejamos la línea original
+                            return match;
+                        });
+
+                        return processedLine;
                     });
 
-                    return processedLine;
-                });
-
-                return processedLines.join('\n');
-            }
-
-            // Evento de procesamiento
-            $('#processBtn').click(async function() {
-                try {
-                    const psrFile = $('#psrFile')[0].files[0];
-                    if (!psrFile) {
-                        alert('Por favor, selecciona un archivo PSR');
-                        return;
-                    }
-
-                    const psrContent = await readPSRFile(psrFile);
-                    processedContent = processContent(psrContent);
-
-                    // Mostrar resumen
-                    $('#processingSummary').html(`
-                        <div class="p-4 bg-green-100 dark:bg-green-900 rounded-lg">
-                            <p class="text-green-800 dark:text-green-200">
-                                Archivo procesado exitosamente<br>
-                                Total de cambios: ${changes.length}<br>
-                                Nombre del archivo: ${psrFile.name}
-                            </p>
-                        </div>
-                    `);
-
-                    $('#resultsSection').removeClass('hidden');
-                } catch (error) {
-                    alert('Error al procesar el archivo: ' + error.message);
+                    // Unir todas las líneas procesadas de nuevo en un solo texto
+                    return processedLines.join('\n');
                 }
-            });
 
-            // Descargar archivo procesado
-            $('#downloadBtn').click(function() {
-                const blob = new Blob([processedContent], { type: 'text/plain' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'processed_' + $('#psrFile')[0].files[0].name;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-            });
+                // Manejador del botón de procesar
+                $('#processBtn').click(async function() {
+                    try {
+                        // Obtener el archivo seleccionado
+                        const psrFile = $('#psrFile')[0].files[0];
+                        if (!psrFile) {
+                            alert('Por favor, selecciona un archivo PSR');
+                            return;
+                        }
 
-            // Mostrar modal de cambios
-            $('#showChangesBtn').click(function() {
-                const $changesList = $('#changesList').empty();
-                
-                changes.forEach(change => {
-                    $changesList.append(`
-                        <div class="p-4 bg-gray-100 dark:bg-slate-700 rounded-lg">
-                            <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Línea ${change.lineNumber}:</p>
-                            <p class="text-red-600 dark:text-red-400 mb-2">Original:<br>${change.original}</p>
-                            <p class="text-green-600 dark:text-green-400">Procesado:<br>${change.processed}</p>
-                        </div>
-                    `);
+                        // Leer y procesar el archivo
+                        const psrContent = await readPSRFile(psrFile);
+                        processedContent = processContent(psrContent);
+
+                        // Mostrar resumen del procesamiento
+                        $('#processingSummary').html(`
+                            <div class="p-4 bg-green-100 dark:bg-green-900 rounded-lg">
+                                <p class="text-green-800 dark:text-green-200">
+                                    Archivo procesado exitosamente<br>
+                                    Total de cambios: ${changes.length}<br>
+                                    Nombre del archivo: ${psrFile.name}
+                                </p>
+                            </div>
+                        `);
+
+                        // Mostrar la sección de resultados
+                        $('#resultsSection').removeClass('hidden');
+                    } catch (error) {
+                        alert('Error al procesar el archivo: ' + error.message);
+                    }
                 });
 
-                $('#changesModal').removeClass('hidden');
-            });
+                // Manejador del botón de descarga
+                // Crea un archivo temporal y lo descarga automáticamente
+                $('#downloadBtn').click(function() {
+                    // Crear un blob con el contenido procesado
+                    const blob = new Blob([processedContent], { type: 'text/plain' });
+                    // Crear URL temporal para el blob
+                    const url = window.URL.createObjectURL(blob);
+                    // Crear elemento <a> temporal
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'processed_' + $('#psrFile')[0].files[0].name;
+                    // Agregar al documento, hacer clic y limpiar
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                });
 
-            // Cerrar modal
-            $('#closeModal').click(function() {
-                $('#changesModal').addClass('hidden');
+                // Manejador para mostrar los cambios en un modal
+                $('#showChangesBtn').click(function() {
+                    const $changesList = $('#changesList').empty();
+
+                    // Por cada cambio, crear un elemento visual que muestre el antes y después
+                    changes.forEach(change => {
+                        $changesList.append(`
+                            <div class="p-4 bg-gray-100 dark:bg-slate-700 rounded-lg">
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">Línea ${change.lineNumber}:</p>
+                                <p class="text-red-600 dark:text-red-400 mb-2">Original:<br>${change.original}</p>
+                                <p class="text-green-600 dark:text-green-400">Procesado:<br>${change.processed}</p>
+                            </div>
+                        `);
+                    });
+
+                    // Mostrar el modal
+                    $('#changesModal').removeClass('hidden');
+                });
+
+                // Manejador para cerrar el modal de cambios
+                $('#closeModal').click(function() {
+                    $('#changesModal').addClass('hidden');
+                });
             });
-        });
-    </script>
+        </script>
 </body>
 </html>
